@@ -189,6 +189,7 @@ class DataCollector:
         if statement_type == 'income':
             return {
                 'Total Revenue': 'Revenue',
+                'Operating Revenue': 'Revenue',  # Alternative name
                 'Revenues': 'Revenue',  # Alternative name
                 'Revenue': 'Revenue',  # Direct match
                 'Cost Of Revenue': 'Cost of Revenue',
