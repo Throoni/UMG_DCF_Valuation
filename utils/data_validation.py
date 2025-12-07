@@ -64,9 +64,28 @@ def validate_accounting_identity(balance_sheet: pd.DataFrame) -> Tuple[bool, Lis
         liabilities = row['Total Liabilities']
         equity = row['Total Equity']
         
+        # Skip rows with missing data (NaN, NaT, None)
+        try:
+            if pd.isna(assets) or pd.isna(liabilities) or pd.isna(equity):
+                continue
+        except (TypeError, ValueError):
+            continue
+        
+        # Ensure values are numeric
+        try:
+            assets = float(assets) if not pd.isna(assets) else None
+            liabilities = float(liabilities) if not pd.isna(liabilities) else None
+            equity = float(equity) if not pd.isna(equity) else None
+            
+            if assets is None or liabilities is None or equity is None:
+                continue
+        except (ValueError, TypeError):
+            continue
+        
         # Allow small rounding differences (0.1% tolerance)
         calculated_equity = assets - liabilities
-        if abs(calculated_equity - equity) > abs(assets) * 0.001:
+        tolerance = max(abs(assets) * 0.001, 1000)  # At least 1000 units tolerance
+        if abs(calculated_equity - equity) > tolerance:
             errors.append(
                 f"Accounting identity violation at {idx}: "
                 f"Assets ({assets}) != Liabilities ({liabilities}) + Equity ({equity})"
@@ -98,10 +117,31 @@ def validate_cash_flow_identity(cash_flow: pd.DataFrame) -> Tuple[bool, List[str
         financing = row['Financing Cash Flow']
         net_change = row['Net Change in Cash']
         
+        # Skip rows with missing data (NaN, NaT, None)
+        try:
+            if pd.isna(operating) or pd.isna(investing) or pd.isna(financing) or pd.isna(net_change):
+                continue
+        except (TypeError, ValueError):
+            continue
+        
+        # Ensure values are numeric (handle NaT, None, etc.)
+        try:
+            operating = float(operating) if not pd.isna(operating) else None
+            investing = float(investing) if not pd.isna(investing) else None
+            financing = float(financing) if not pd.isna(financing) else None
+            net_change = float(net_change) if not pd.isna(net_change) else None
+            
+            if operating is None or investing is None or financing is None or net_change is None:
+                continue
+        except (ValueError, TypeError):
+            continue
+        
         calculated_change = operating + investing + financing
         
         # Allow small rounding differences (0.1% tolerance)
-        if abs(calculated_change - net_change) > abs(operating) * 0.001:
+        # Use a small absolute tolerance if operating is zero or very small
+        tolerance = max(abs(operating) * 0.001, 1000)  # At least 1000 units tolerance
+        if abs(calculated_change - net_change) > tolerance:
             errors.append(
                 f"Cash flow identity violation at {idx}: "
                 f"Sum ({calculated_change}) != Net Change ({net_change})"

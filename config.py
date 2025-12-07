@@ -85,5 +85,5 @@ DATA_DIR = "data"
 RAW_DATA_DIR = "data/raw"
 PROCESSED_DATA_DIR = "data/processed"
 OUTPUT_DIR = "outputs"
-EXCEL_OUTPUT_FILE = "outputs/UMG_DCF_Model.xlsx"
+EXCEL_OUTPUT_FILE = "outputs/UMG_DCF_MODEL 2.xlsx"
 

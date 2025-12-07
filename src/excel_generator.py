@@ -60,7 +60,30 @@ class ExcelGenerator:
             os.makedirs(config.OUTPUT_DIR, exist_ok=True)
             output_path = config.EXCEL_OUTPUT_FILE
         
-        print(f"Generating Excel workbook: {output_path}")
+        print(f"Updating Excel workbook: {output_path}")
+        
+        # Check if file exists - if so, load it to preserve existing sheets
+        if os.path.exists(output_path):
+            try:
+                from openpyxl import load_workbook
+                existing_wb = load_workbook(output_path)
+                # Copy existing sheets that we want to preserve
+                # We'll recreate Historical Financials from current data, but preserve other user edits
+                print("  Loading existing workbook to preserve user edits...")
+                # Create new workbook but we'll update sheets
+                self.wb = existing_wb
+                # Remove sheets we'll regenerate (but keep Historical Financials if user wants to preserve it)
+                sheets_to_remove = ['Executive Summary', 'Data Sources', 'Financial Analysis', 
+                                   'DCF Assumptions', 'Revenue Model', 'Income Statement Projections',
+                                   'Balance Sheet Projections', 'Cash Flow Projections', 'FCFF Calculation',
+                                   'WACC Calculation', 'Terminal Value', 'DCF Valuation', 
+                                   'Sensitivity Analysis', 'Scenario Analysis', 'Relative Valuation', 'Summary']
+                for sheet_name in sheets_to_remove:
+                    if sheet_name in self.wb.sheetnames:
+                        self.wb.remove(self.wb[sheet_name])
+            except Exception as e:
+                print(f"  Warning: Could not load existing workbook: {e}")
+                print("  Creating new workbook...")
         
         # Validate data before generation
         validation_errors = self._validate_data()
@@ -69,11 +92,11 @@ class ExcelGenerator:
             for error in validation_errors:
                 print(f"    - {error}")
         
-        # Create all sheets
+        # Create/update all sheets (Historical Financials will be updated with current data)
         self._create_executive_summary()
         self._create_data_sources()
-        self._create_historical_financials()
-        self._create_financial_analysis()
+        self._create_historical_financials()  # This will update the sheet with current data
+        self._create_financial_ratios()
         self._create_dcf_assumptions()
         self._create_revenue_model()
         self._create_income_statement_projections()
@@ -249,7 +272,10 @@ class ExcelGenerator:
         auto_adjust_column_width(ws)
     
     def _create_historical_financials(self):
-        """Create Historical Financials sheet"""
+        """Create or update Historical Financials sheet"""
+        # Remove existing sheet if it exists (to update with current data)
+        if "Historical Financials" in self.wb.sheetnames:
+            self.wb.remove(self.wb["Historical Financials"])
         ws = self.wb.create_sheet("Historical Financials")
         
         # Income Statement
@@ -390,35 +416,275 @@ class ExcelGenerator:
         
         auto_adjust_column_width(ws)
     
-    def _create_financial_analysis(self):
-        """Create Financial Analysis sheet"""
-        ws = self.wb.create_sheet("Financial Analysis")
+    def _create_financial_ratios(self):
+        """Create comprehensive Financial Ratios sheet with all calculated ratios"""
+        ws = self.wb.create_sheet("Financial Ratios")
+        
+        ratios = self.financial_analyzer.ratios
+        income_df = self.financial_analyzer.normalized_income_stmt
+        balance_df = self.financial_analyzer.normalized_balance_sheet
+        
+        # Get historical periods
+        periods = []
+        if not income_df.empty and 'Date' in income_df.columns:
+            periods = [d.strftime('%Y') if hasattr(d, 'strftime') else str(d)[:4] 
+                      for d in income_df['Date'].tolist()]
+        elif not balance_df.empty and 'Date' in balance_df.columns:
+            periods = [d.strftime('%Y') if hasattr(d, 'strftime') else str(d)[:4] 
+                      for d in balance_df['Date'].tolist()]
         
         row = 1
-        ws[f'A{row}'] = "Financial Ratios"
+        ws[f'A{row}'] = "Comprehensive Financial Ratios"
         apply_style_to_cell(ws[f'A{row}'], get_header_style())
         row += 2
         
-        # Margins
-        if 'gross_margin' in self.financial_analyzer.ratios:
-            ws[f'A{row}'] = "Gross Margin"
-            margins = self.financial_analyzer.ratios['gross_margin']
-            if margins:
-                ws[f'B{row}'] = margins[-1] if isinstance(margins, list) else margins
-                apply_style_to_cell(ws[f'A{row}'], get_header_style())
-                apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
-                ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['percentage_format']
-                row += 1
+        # Helper function to write ratio row
+        def write_ratio_row(label, ratio_key, format_type='percentage'):
+            nonlocal row
+            if ratio_key in ratios:
+                ws[f'A{row}'] = label
+                ratio_data = ratios[ratio_key]
+                if isinstance(ratio_data, list) and len(ratio_data) > 0:
+                    # Write historical values
+                    col = 2
+                    for i, period in enumerate(periods[:len(ratio_data)]):
+                        ws.cell(row, col, period)
+                        apply_style_to_cell(ws.cell(row, col), get_header_style())
+                        col += 1
+                    row += 1
+                    ws[f'A{row}'] = label
+                    col = 2
+                    for i, val in enumerate(ratio_data):
+                        if i < len(periods):
+                            ws.cell(row, col, val)
+                            apply_style_to_cell(ws.cell(row, col), get_calculation_style())
+                            if format_type == 'percentage':
+                                ws.cell(row, col).number_format = config.EXCEL_FORMATTING['percentage_format']
+                            elif format_type == 'number':
+                                ws.cell(row, col).number_format = config.EXCEL_FORMATTING['number_format']
+                            col += 1
+                elif not isinstance(ratio_data, list):
+                    ws[f'B{row}'] = ratio_data
+                    apply_style_to_cell(ws[f'A{row}'], get_header_style())
+                    apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+                    if format_type == 'percentage':
+                        ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['percentage_format']
+                    elif format_type == 'number':
+                        ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
         
-        if 'ebit_margin' in self.financial_analyzer.ratios:
-            ws[f'A{row}'] = "EBIT Margin"
-            margins = self.financial_analyzer.ratios['ebit_margin']
-            if margins:
-                ws[f'B{row}'] = margins[-1] if isinstance(margins, list) else margins
-                apply_style_to_cell(ws[f'A{row}'], get_header_style())
-                apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
-                ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['percentage_format']
-                row += 1
+        # PROFITABILITY RATIOS
+        ws[f'A{row}'] = "PROFITABILITY RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Gross Margin", 'gross_margin')
+        write_ratio_row("EBIT Margin", 'ebit_margin')
+        write_ratio_row("EBITDA Margin", 'ebitda_margin')
+        write_ratio_row("Net Margin", 'net_margin')
+        write_ratio_row("Return on Equity (ROE)", 'roe')
+        write_ratio_row("Return on Assets (ROA)", 'roa')
+        write_ratio_row("Return on Invested Capital (ROIC)", 'roic')
+        write_ratio_row("Effective Tax Rate", 'effective_tax_rate')
+        
+        row += 1
+        
+        # EFFICIENCY RATIOS
+        ws[f'A{row}'] = "EFFICIENCY RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Asset Turnover", 'asset_turnover', 'number')
+        write_ratio_row("Receivables Turnover", 'receivables_turnover', 'number')
+        write_ratio_row("Days Sales Outstanding (DSO)", 'dso', 'number')
+        write_ratio_row("Payables Turnover", 'payables_turnover', 'number')
+        write_ratio_row("Days Payable Outstanding (DPO)", 'dpo', 'number')
+        write_ratio_row("Working Capital Turnover", 'working_capital_turnover', 'number')
+        
+        row += 1
+        
+        # LIQUIDITY RATIOS
+        ws[f'A{row}'] = "LIQUIDITY RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Current Ratio", 'current_ratio', 'number')
+        write_ratio_row("Quick Ratio", 'quick_ratio', 'number')
+        write_ratio_row("Cash Ratio", 'cash_ratio', 'number')
+        write_ratio_row("Operating Cash Flow to Current Liabilities", 'ocf_to_current_liabilities', 'number')
+        write_ratio_row("Working Capital", 'working_capital', 'number')
+        
+        row += 1
+        
+        # LEVERAGE RATIOS
+        ws[f'A{row}'] = "LEVERAGE RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Debt-to-Equity", 'debt_to_equity', 'number')
+        write_ratio_row("Debt-to-Assets", 'debt_to_assets')
+        write_ratio_row("Equity Ratio", 'equity_ratio')
+        write_ratio_row("Debt-to-EBITDA", 'debt_to_ebitda', 'number')
+        write_ratio_row("Interest Coverage Ratio", 'interest_coverage', 'number')
+        
+        row += 1
+        
+        # GROWTH RATIOS
+        ws[f'A{row}'] = "GROWTH RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Revenue Growth (YoY)", 'revenue_growth_yoy')
+        if 'revenue_cagr' in ratios:
+            ws[f'A{row}'] = "Revenue CAGR"
+            ws[f'B{row}'] = ratios['revenue_cagr']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['percentage_format']
+            row += 1
+        
+        write_ratio_row("Net Income Growth (YoY)", 'net_income_growth_yoy')
+        write_ratio_row("EBITDA Growth (YoY)", 'ebitda_growth_yoy')
+        if 'ebitda_cagr' in ratios:
+            ws[f'A{row}'] = "EBITDA CAGR"
+            ws[f'B{row}'] = ratios['ebitda_cagr']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['percentage_format']
+            row += 1
+        
+        write_ratio_row("Asset Growth (YoY)", 'asset_growth_yoy')
+        write_ratio_row("Equity Growth (YoY)", 'equity_growth_yoy')
+        write_ratio_row("Operating Cash Flow Growth", 'operating_cash_flow_growth')
+        write_ratio_row("Free Cash Flow Growth", 'free_cash_flow_growth')
+        
+        row += 1
+        
+        # VALUATION RATIOS
+        ws[f'A{row}'] = "VALUATION RATIOS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        if 'pe_ratio' in ratios:
+            ws[f'A{row}'] = "Price-to-Earnings (P/E)"
+            ws[f'B{row}'] = ratios['pe_ratio']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'pb_ratio' in ratios:
+            ws[f'A{row}'] = "Price-to-Book (P/B)"
+            ws[f'B{row}'] = ratios['pb_ratio']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'ps_ratio' in ratios:
+            ws[f'A{row}'] = "Price-to-Sales (P/S)"
+            ws[f'B{row}'] = ratios['ps_ratio']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'ev_ebitda' in ratios:
+            ws[f'A{row}'] = "EV/EBITDA"
+            ws[f'B{row}'] = ratios['ev_ebitda']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'ev_ebit' in ratios:
+            ws[f'A{row}'] = "EV/EBIT"
+            ws[f'B{row}'] = ratios['ev_ebit']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'ev_revenue' in ratios:
+            ws[f'A{row}'] = "EV/Revenue"
+            ws[f'B{row}'] = ratios['ev_revenue']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'market_cap_to_revenue' in ratios:
+            ws[f'A{row}'] = "Market Cap to Revenue"
+            ws[f'B{row}'] = ratios['market_cap_to_revenue']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        row += 1
+        
+        # PER SHARE METRICS
+        ws[f'A{row}'] = "PER SHARE METRICS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        if 'eps' in ratios:
+            ws[f'A{row}'] = "Earnings Per Share (EPS)"
+            ws[f'B{row}'] = ratios['eps']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'book_value_per_share' in ratios:
+            ws[f'A{row}'] = "Book Value Per Share"
+            ws[f'B{row}'] = ratios['book_value_per_share']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'revenue_per_share' in ratios:
+            ws[f'A{row}'] = "Revenue Per Share"
+            ws[f'B{row}'] = ratios['revenue_per_share']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        if 'cash_flow_per_share' in ratios:
+            ws[f'A{row}'] = "Cash Flow Per Share"
+            ws[f'B{row}'] = ratios['cash_flow_per_share']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
+        
+        row += 1
+        
+        # OTHER METRICS
+        ws[f'A{row}'] = "OTHER METRICS"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        ws[f'A{row}'].font = ws[f'A{row}'].font.copy(bold=True, size=12)
+        row += 1
+        
+        write_ratio_row("Working Capital as % of Revenue", 'working_capital_pct_revenue')
+        write_ratio_row("CapEx as % of Revenue", 'capex_pct_revenue')
+        
+        if 'enterprise_value' in ratios:
+            ws[f'A{row}'] = "Enterprise Value"
+            ws[f'B{row}'] = ratios['enterprise_value']
+            apply_style_to_cell(ws[f'A{row}'], get_header_style())
+            apply_style_to_cell(ws[f'B{row}'], get_calculation_style())
+            ws[f'B{row}'].number_format = config.EXCEL_FORMATTING['number_format']
+            row += 1
         
         auto_adjust_column_width(ws)
     

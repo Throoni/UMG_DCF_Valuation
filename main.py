@@ -53,7 +53,14 @@ def main():
         
         financial_analyzer = FinancialAnalyzer(income_stmt, balance_sheet, cash_flow)
         financial_analyzer.normalize_financials()
-        financial_analyzer.calculate_ratios()
+        
+        # Prepare market data for ratio calculations
+        market_data_for_ratios = {
+            'current_price': data.get('current_price'),
+            'shares_outstanding': data.get('shares_outstanding'),
+            'market_cap': data.get('market_cap'),
+        }
+        financial_analyzer.calculate_all_ratios(market_data_for_ratios)
         
         # Step 3: Prepare DCF Assumptions
         print("\n[Step 3/7] Preparing DCF Assumptions")
