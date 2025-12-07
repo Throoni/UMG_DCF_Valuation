@@ -120,34 +120,67 @@ class DataCollector:
         """
         Standardize financial statement column names and structure
         
+        Yahoo Finance structure: dates as columns, line items as index
+        We need: dates as rows, line items as columns
+        
         Args:
-            df: Raw financial statement DataFrame
+            df: Raw financial statement DataFrame (dates as columns, line items as index)
             statement_type: Type of statement ('income', 'balance', 'cashflow')
             
         Returns:
-            Standardized DataFrame
+            Standardized DataFrame with dates as rows and line items as columns
         """
         if df.empty:
             return pd.DataFrame()
         
-        # Transpose if dates are columns
-        if df.columns.dtype == 'datetime64[ns]':
-            df = df.T
-            df.index.name = 'Date'
-            df = df.reset_index()
+        # Yahoo Finance: dates are columns, line items are in index
+        # Transpose to get dates as rows
+        df_transposed = df.T.copy()
+        
+        # Convert date index to column
+        df_transposed.reset_index(inplace=True)
+        df_transposed.rename(columns={'index': 'Date'}, inplace=True)
         
         # Map Yahoo Finance line items to standard names
         mapping = self._get_line_item_mapping(statement_type)
         
-        # Create standardized DataFrame
+        # Create standardized DataFrame starting with Date column
         standardized = pd.DataFrame()
-        standardized['Date'] = df.index if 'Date' not in df.columns else df['Date']
+        standardized['Date'] = df_transposed['Date']
         
+        # Map line items from original index to standard names
+        # First, try exact matches
         for yahoo_name, standard_name in mapping.items():
             if yahoo_name in df.index:
+                # Get the values for this line item across all dates
                 standardized[standard_name] = df.loc[yahoo_name].values
-            elif yahoo_name in df.columns:
-                standardized[standard_name] = df[yahoo_name].values
+            elif yahoo_name in df_transposed.columns:
+                standardized[standard_name] = df_transposed[yahoo_name].values
+        
+        # If we didn't get Revenue, try to find it with partial matching
+        if 'Revenue' not in standardized.columns and not df.empty:
+            # Try to find revenue by searching index
+            revenue_candidates = [item for item in df.index if 'revenue' in item.lower() or 'revenues' in item.lower()]
+            if revenue_candidates:
+                standardized['Revenue'] = df.loc[revenue_candidates[0]].values
+                print(f"    Found revenue as: {revenue_candidates[0]}")
+        
+        # Try to find other key items with partial matching if not found
+        if 'EBITDA' not in standardized.columns and not df.empty:
+            ebitda_candidates = [item for item in df.index if 'ebitda' in item.lower()]
+            if ebitda_candidates:
+                standardized['EBITDA'] = df.loc[ebitda_candidates[0]].values
+                print(f"    Found EBITDA as: {ebitda_candidates[0]}")
+        
+        if 'Net Income' not in standardized.columns and not df.empty:
+            ni_candidates = [item for item in df.index if 'net income' in item.lower() and 'continuing' not in item.lower()]
+            if ni_candidates:
+                standardized['Net Income'] = df.loc[ni_candidates[0]].values
+                print(f"    Found Net Income as: {ni_candidates[0]}")
+        
+        # Sort by date (most recent first)
+        if not standardized.empty and 'Date' in standardized.columns:
+            standardized = standardized.sort_values('Date', ascending=False).reset_index(drop=True)
         
         return standardized
     
@@ -156,15 +189,26 @@ class DataCollector:
         if statement_type == 'income':
             return {
                 'Total Revenue': 'Revenue',
+                'Revenues': 'Revenue',  # Alternative name
+                'Revenue': 'Revenue',  # Direct match
                 'Cost Of Revenue': 'Cost of Revenue',
+                'Cost Of Goods And Services Sold': 'Cost of Revenue',  # Alternative
+                'Reconciled Cost Of Revenue': 'Cost of Revenue',  # Alternative
                 'Gross Profit': 'Gross Profit',
                 'Operating Income': 'Operating Income',
+                'Total Operating Income As Reported': 'Operating Income',  # Alternative
                 'EBIT': 'EBIT',
                 'EBITDA': 'EBITDA',
+                'Normalized EBITDA': 'EBITDA',  # Alternative
                 'Interest Expense': 'Interest Expense',
+                'Interest Expense Non Operating': 'Interest Expense',  # Alternative
+                'Net Interest Income': 'Interest Expense',  # Alternative (negative)
                 'Income Before Tax': 'Income Before Tax',
                 'Income Tax Expense': 'Income Tax Expense',
                 'Net Income': 'Net Income',
+                'Net Income Common Stockholders': 'Net Income',  # Alternative
+                'Net Income From Continuing Operation Net Minority Interest': 'Net Income',  # Alternative
+                'Net Income From Continuing And Discontinued Operation': 'Net Income',  # Alternative
             }
         elif statement_type == 'balance':
             return {

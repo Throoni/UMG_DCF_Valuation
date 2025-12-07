@@ -62,6 +62,13 @@ class ExcelGenerator:
         
         print(f"Generating Excel workbook: {output_path}")
         
+        # Validate data before generation
+        validation_errors = self._validate_data()
+        if validation_errors:
+            print("  Warnings during data validation:")
+            for error in validation_errors:
+                print(f"    - {error}")
+        
         # Create all sheets
         self._create_executive_summary()
         self._create_data_sources()
@@ -86,6 +93,43 @@ class ExcelGenerator:
         print(f"Excel workbook saved: {output_path}")
         
         return output_path
+    
+    def _validate_data(self) -> list:
+        """
+        Validate that required data exists before Excel generation
+        
+        Returns:
+            List of validation error messages (empty if all valid)
+        """
+        errors = []
+        
+        # Check financial statements
+        if self.financial_analyzer.normalized_income_stmt.empty:
+            errors.append("Income statement is empty - historical data may not be available")
+        elif 'Revenue' not in self.financial_analyzer.normalized_income_stmt.columns:
+            errors.append("Revenue column not found in income statement")
+        
+        if self.financial_analyzer.normalized_balance_sheet.empty:
+            errors.append("Balance sheet is empty - historical data may not be available")
+        
+        if self.financial_analyzer.normalized_cash_flow.empty:
+            errors.append("Cash flow statement is empty - historical data may not be available")
+        
+        # Check DCF projections
+        if self.dcf_model.revenue_projections is None or len(self.dcf_model.revenue_projections) == 0:
+            errors.append("Revenue projections are missing")
+        
+        if self.dcf_model.income_projections is None or self.dcf_model.income_projections.empty:
+            errors.append("Income statement projections are missing")
+        
+        if self.dcf_model.wacc is None:
+            errors.append("WACC has not been calculated")
+        
+        # Check final recommendation
+        if not self.final_recommendation:
+            errors.append("Final recommendation data is missing")
+        
+        return errors
     
     def _create_executive_summary(self):
         """Create Executive Summary sheet"""
@@ -210,31 +254,132 @@ class ExcelGenerator:
         if not self.financial_analyzer.normalized_income_stmt.empty:
             income_stmt = self.financial_analyzer.normalized_income_stmt
             
-            # Headers
-            ws[f'A{row}'] = "Line Item"
+            # Structure: rows are periods (dates), columns are line items
+            # Headers: Date column + line items
+            ws[f'A{row}'] = "Period"
             col = 2
-            for date_col in income_stmt.columns:
-                if date_col != 'Date':
-                    ws.cell(row, col, date_col)
-                    apply_style_to_cell(ws.cell(row, col), get_header_style())
-                    col += 1
+            
+            # Get all date periods (rows in the DataFrame)
+            periods = income_stmt['Date'].tolist() if 'Date' in income_stmt.columns else []
+            
+            # Write line item headers
+            line_items = ['Revenue', 'Cost of Revenue', 'Gross Profit', 
+                         'EBIT', 'EBITDA', 'Net Income']
+            available_line_items = [item for item in line_items if item in income_stmt.columns]
+            
+            for line_item in available_line_items:
+                ws.cell(row, col, line_item)
+                apply_style_to_cell(ws.cell(row, col), get_header_style())
+                col += 1
             row += 1
             
-            # Data
-            for line_item in ['Revenue', 'Cost of Revenue', 'Gross Profit', 
-                            'EBIT', 'EBITDA', 'Net Income']:
-                if line_item in income_stmt.columns:
-                    ws[f'A{row}'] = line_item
-                    apply_style_to_cell(ws[f'A{row}'], get_header_style())
-                    col = 2
-                    for date_col in income_stmt.columns:
-                        if date_col != 'Date':
-                            value = income_stmt[line_item].iloc[col-2] if col-2 < len(income_stmt) else None
-                            ws.cell(row, col, value)
-                            apply_style_to_cell(ws.cell(row, col), get_calculation_style())
-                            ws.cell(row, col).number_format = config.EXCEL_FORMATTING['number_format']
-                            col += 1
-                    row += 1
+            # Write data: each row is a period, each column is a line item
+            for period_idx, period_date in enumerate(periods):
+                # Write period/date
+                try:
+                    if hasattr(period_date, 'strftime'):
+                        period_str = period_date.strftime('%Y-%m-%d')
+                    else:
+                        period_str = str(period_date)
+                except:
+                    period_str = str(period_date)
+                ws.cell(row, 1, period_str)
+                apply_style_to_cell(ws.cell(row, 1), get_header_style())
+                
+                # Write line item values for this period
+                col = 2
+                for line_item in available_line_items:
+                    if line_item in income_stmt.columns:
+                        value = income_stmt[line_item].iloc[period_idx]
+                        ws.cell(row, col, value)
+                        apply_style_to_cell(ws.cell(row, col), get_calculation_style())
+                        ws.cell(row, col).number_format = config.EXCEL_FORMATTING['number_format']
+                    col += 1
+                row += 1
+        
+        # Balance Sheet Section
+        row += 2
+        ws[f'A{row}'] = "Balance Sheet (Historical)"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        row += 2
+        
+        if not self.financial_analyzer.normalized_balance_sheet.empty:
+            balance_sheet = self.financial_analyzer.normalized_balance_sheet
+            
+            ws[f'A{row}'] = "Period"
+            col = 2
+            
+            periods = balance_sheet['Date'].tolist() if 'Date' in balance_sheet.columns else []
+            line_items = ['Total Assets', 'Total Liabilities', 'Total Equity', 
+                         'Current Assets', 'Current Liabilities', 'Total Debt',
+                         'Cash and Cash Equivalents']
+            available_line_items = [item for item in line_items if item in balance_sheet.columns]
+            
+            for line_item in available_line_items:
+                ws.cell(row, col, line_item)
+                apply_style_to_cell(ws.cell(row, col), get_header_style())
+                col += 1
+            row += 1
+            
+            for period_idx, period_date in enumerate(periods):
+                if isinstance(period_date, pd.Timestamp):
+                    period_str = period_date.strftime('%Y-%m-%d')
+                else:
+                    period_str = str(period_date)
+                ws.cell(row, 1, period_str)
+                apply_style_to_cell(ws.cell(row, 1), get_header_style())
+                
+                col = 2
+                for line_item in available_line_items:
+                    if line_item in balance_sheet.columns:
+                        value = balance_sheet[line_item].iloc[period_idx]
+                        ws.cell(row, col, value)
+                        apply_style_to_cell(ws.cell(row, col), get_calculation_style())
+                        ws.cell(row, col).number_format = config.EXCEL_FORMATTING['number_format']
+                    col += 1
+                row += 1
+        
+        # Cash Flow Section
+        row += 2
+        ws[f'A{row}'] = "Cash Flow Statement (Historical)"
+        apply_style_to_cell(ws[f'A{row}'], get_header_style())
+        row += 2
+        
+        if not self.financial_analyzer.normalized_cash_flow.empty:
+            cash_flow = self.financial_analyzer.normalized_cash_flow
+            
+            ws[f'A{row}'] = "Period"
+            col = 2
+            
+            periods = cash_flow['Date'].tolist() if 'Date' in cash_flow.columns else []
+            line_items = ['Operating Cash Flow', 'Investing Cash Flow', 
+                         'Financing Cash Flow', 'Capital Expenditures', 
+                         'Net Change in Cash']
+            available_line_items = [item for item in line_items if item in cash_flow.columns]
+            
+            for line_item in available_line_items:
+                ws.cell(row, col, line_item)
+                apply_style_to_cell(ws.cell(row, col), get_header_style())
+                col += 1
+            row += 1
+            
+            for period_idx, period_date in enumerate(periods):
+                if isinstance(period_date, pd.Timestamp):
+                    period_str = period_date.strftime('%Y-%m-%d')
+                else:
+                    period_str = str(period_date)
+                ws.cell(row, 1, period_str)
+                apply_style_to_cell(ws.cell(row, 1), get_header_style())
+                
+                col = 2
+                for line_item in available_line_items:
+                    if line_item in cash_flow.columns:
+                        value = cash_flow[line_item].iloc[period_idx]
+                        ws.cell(row, col, value)
+                        apply_style_to_cell(ws.cell(row, col), get_calculation_style())
+                        ws.cell(row, col).number_format = config.EXCEL_FORMATTING['number_format']
+                    col += 1
+                row += 1
         
         auto_adjust_column_width(ws)
     

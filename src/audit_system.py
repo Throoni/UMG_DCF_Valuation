@@ -295,23 +295,31 @@ class AuditSystem:
         """Audit code quality and technical soundness"""
         print("\n[Technical Audit] Checking code quality...")
         
-        # Check for required modules
+        # Check for required modules (now in src/ directory)
         required_modules = [
-            'data_collection', 'financial_analysis', 'dcf_model',
-            'valuation_analysis', 'excel_generator', 'audit_system'
+            'src/data_collection', 'src/financial_analysis', 'src/dcf_model',
+            'src/valuation_analysis', 'src/excel_generator', 'src/audit_system'
         ]
         
-        for module_name in required_modules:
-            module_path = f"{module_name}.py"
-            if os.path.exists(module_path):
+        for module_path in required_modules:
+            full_path = f"{module_path}.py"
+            if os.path.exists(full_path):
+                module_name = os.path.basename(module_path)
                 self.audit_results['technical_checks'].append(f"✓ Module '{module_name}.py' exists")
             else:
-                error = f"Module '{module_name}.py' not found"
-                self.audit_results['errors'].append(error)
-                print(f"  ✗ ERROR: {error}")
+                # Try alternative path (relative to current file)
+                alt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), full_path)
+                if os.path.exists(alt_path):
+                    module_name = os.path.basename(module_path)
+                    self.audit_results['technical_checks'].append(f"✓ Module '{module_name}.py' exists")
+                else:
+                    error = f"Module '{os.path.basename(module_path)}.py' not found"
+                    self.audit_results['errors'].append(error)
+                    print(f"  ✗ ERROR: {error}")
         
         # Check config file
-        if os.path.exists('config.py'):
+        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.py')
+        if os.path.exists(config_path) or os.path.exists('config.py'):
             self.audit_results['technical_checks'].append("✓ Config file exists")
         else:
             error = "Config file not found"

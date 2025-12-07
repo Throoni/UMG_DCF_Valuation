@@ -61,11 +61,15 @@ class FinancialAnalyzer:
     
     def _normalize_income_statement(self) -> pd.DataFrame:
         """Normalize income statement"""
+        if self.income_stmt.empty:
+            return pd.DataFrame()
+        
         df = self.income_stmt.copy()
         
-        # Ensure we have required columns
-        required_cols = ['Revenue', 'Cost of Revenue', 'Gross Profit', 
-                        'Operating Income', 'EBIT', 'Net Income']
+        # Preserve Date column if it exists
+        date_col = None
+        if 'Date' in df.columns:
+            date_col = df['Date']
         
         # Calculate missing line items if needed
         if 'Gross Profit' not in df.columns and 'Revenue' in df.columns and 'Cost of Revenue' in df.columns:
@@ -84,14 +88,23 @@ class FinancialAnalyzer:
                 # Use operating income as proxy if depreciation not available
                 df['EBITDA'] = df['Operating Income']
         
-        # Remove one-time items (would need manual identification in practice)
-        # For now, we assume financials are already clean
+        # Ensure Date column is preserved
+        if date_col is not None and 'Date' not in df.columns:
+            df.insert(0, 'Date', date_col)
         
         return df
     
     def _normalize_balance_sheet(self) -> pd.DataFrame:
         """Normalize balance sheet"""
+        if self.balance_sheet.empty:
+            return pd.DataFrame()
+        
         df = self.balance_sheet.copy()
+        
+        # Preserve Date column if it exists
+        date_col = None
+        if 'Date' in df.columns:
+            date_col = df['Date']
         
         # Calculate working capital
         if 'Current Assets' in df.columns and 'Current Liabilities' in df.columns:
@@ -107,16 +120,32 @@ class FinancialAnalyzer:
             if not is_valid:
                 print(f"  Warning: Accounting identity issues found: {errors}")
         
+        # Ensure Date column is preserved
+        if date_col is not None and 'Date' not in df.columns:
+            df.insert(0, 'Date', date_col)
+        
         return df
     
     def _normalize_cash_flow(self) -> pd.DataFrame:
         """Normalize cash flow statement"""
+        if self.cash_flow.empty:
+            return pd.DataFrame()
+        
         df = self.cash_flow.copy()
+        
+        # Preserve Date column if it exists
+        date_col = None
+        if 'Date' in df.columns:
+            date_col = df['Date']
         
         # Calculate free cash flow
         if 'Operating Cash Flow' in df.columns and 'Capital Expenditures' in df.columns:
             df['Free Cash Flow'] = df['Operating Cash Flow'] + df['Capital Expenditures']
             # Note: CapEx is typically negative, so we add it
+        
+        # Ensure Date column is preserved
+        if date_col is not None and 'Date' not in df.columns:
+            df.insert(0, 'Date', date_col)
         
         return df
     
