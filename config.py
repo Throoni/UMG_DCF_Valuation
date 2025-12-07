@@ -11,8 +11,17 @@ SECTOR = "Entertainment"
 INDUSTRY = "Music & Media"
 
 # Data Source URLs
-INVESTOR_RELATIONS_URL = "https://www.universalmusic.com/investor-relations/"
+INVESTOR_RELATIONS_URL = "https://www.universalmusic.com/investors/"
+INVESTOR_RELATIONS_ALT_URL = "https://www.universalmusic.com/investor-relations/"
 YAHOO_FINANCE_TICKER = "UMG.AS"
+
+# IR Document Settings
+IR_DOCUMENTS_DIR = "data/raw/ir_documents"
+IR_ANNUAL_DIR = "data/raw/ir_documents/annual"
+IR_QUARTERLY_DIR = "data/raw/ir_documents/quarterly"
+IR_YEARS_TO_DOWNLOAD = 5  # Download last 5 years of reports
+IR_SCRAPING_TIMEOUT = 30  # seconds
+IR_RETRY_ATTEMPTS = 3
 
 # Default Assumptions (can be overridden)
 DEFAULT_ASSUMPTIONS = {

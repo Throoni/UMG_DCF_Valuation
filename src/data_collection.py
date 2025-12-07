@@ -12,12 +12,15 @@ from bs4 import BeautifulSoup
 import os
 import sys
 import json
+import re
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 # Add parent directory to path for config import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+from src.ir_scraper import IRScraper
+from src.pdf_extractor import PDFExtractor
 
 
 class DataCollector:
@@ -43,10 +46,28 @@ class DataCollector:
         """
         print(f"Collecting data for {self.company_name} ({self.ticker})...")
         
-        # Collect from Yahoo Finance
+        # Try to collect from IR documents first (more reliable)
+        print("  - Attempting to fetch data from IR documents...")
+        ir_data = self.collect_ir_documents()
+        
+        # Collect from Yahoo Finance (primary or fallback)
         print("  - Fetching data from Yahoo Finance...")
         yahoo_data = self.collect_yahoo_finance_data()
-        self.data.update(yahoo_data)
+        
+        # Merge data: IR takes priority, Yahoo Finance as fallback
+        if ir_data and not ir_data.get('income_statement', pd.DataFrame()).empty:
+            print("    Using IR document data as primary source")
+            self.data.update(ir_data)
+            # Fill in any missing data from Yahoo Finance
+            for key, value in yahoo_data.items():
+                if key not in self.data or (isinstance(value, pd.DataFrame) and not value.empty):
+                    if isinstance(self.data.get(key), pd.DataFrame) and self.data[key].empty:
+                        self.data[key] = value
+                    elif key not in self.data:
+                        self.data[key] = value
+        else:
+            print("    Using Yahoo Finance data (IR extraction unavailable)")
+            self.data.update(yahoo_data)
         
         # Collect market data
         print("  - Fetching market data...")
@@ -352,6 +373,159 @@ class DataCollector:
             json.dump(data_to_save, f, indent=2, default=str)
         
         print(f"  - Raw data saved to {filename}")
+    
+    def collect_ir_documents(self) -> Dict:
+        """
+        Collect financial data from IR documents (annual/quarterly reports)
+        
+        Returns:
+            Dictionary with financial statements from IR documents
+        """
+        ir_data = {
+            'income_statement': pd.DataFrame(),
+            'balance_sheet': pd.DataFrame(),
+            'cash_flow': pd.DataFrame(),
+        }
+        
+        try:
+            # Initialize scraper and extractor
+            scraper = IRScraper()
+            extractor = PDFExtractor()
+            
+            # Find and download annual reports
+            print("    Searching for annual reports...")
+            annual_reports = scraper.find_annual_reports()
+            
+            if not annual_reports:
+                print("    No annual reports found via web scraping")
+                # Try to use already downloaded PDFs
+                annual_reports = self._find_downloaded_pdfs('annual')
+            
+            if annual_reports:
+                print(f"    Found {len(annual_reports)} annual report(s)")
+                
+                # Download reports if needed
+                downloaded_files = []
+                for report in annual_reports[:config.IR_YEARS_TO_DOWNLOAD]:
+                    filepath = scraper.download_report(report)
+                    if filepath:
+                        downloaded_files.append((filepath, report['year']))
+                
+                # If no new downloads, check existing files
+                if not downloaded_files:
+                    downloaded_files = self._find_downloaded_pdfs_with_years('annual')
+                
+                # Extract data from each PDF
+                income_statements = []
+                balance_sheets = []
+                cash_flows = []
+                
+                for filepath, year in downloaded_files:
+                    print(f"    Extracting data from {os.path.basename(filepath)}...")
+                    extracted = extractor.extract_all_statements(filepath, year)
+                    
+                    if 'income_statement' in extracted:
+                        income_statements.append(extracted['income_statement'])
+                    if 'balance_sheet' in extracted:
+                        balance_sheets.append(extracted['balance_sheet'])
+                    if 'cash_flow' in extracted:
+                        cash_flows.append(extracted['cash_flow'])
+                
+                # Combine multiple years into single DataFrames
+                if income_statements:
+                    ir_data['income_statement'] = pd.concat(income_statements, ignore_index=True)
+                if balance_sheets:
+                    ir_data['balance_sheet'] = pd.concat(balance_sheets, ignore_index=True)
+                if cash_flows:
+                    ir_data['cash_flow'] = pd.concat(cash_flows, ignore_index=True)
+                
+                # Standardize format to match Yahoo Finance structure
+                ir_data = self._standardize_ir_data(ir_data)
+            else:
+                print("    No annual reports available")
+        
+        except Exception as e:
+            print(f"    Warning: Error collecting IR documents: {e}")
+            print(f"    Falling back to Yahoo Finance data")
+        
+        return ir_data
+    
+    def _find_downloaded_pdfs(self, report_type: str) -> List[Dict]:
+        """Find already downloaded PDF files"""
+        if report_type == 'annual':
+            pdf_dir = config.IR_ANNUAL_DIR
+        else:
+            pdf_dir = config.IR_QUARTERLY_DIR
+        
+        if not os.path.exists(pdf_dir):
+            return []
+        
+        reports = []
+        for filename in os.listdir(pdf_dir):
+            if filename.lower().endswith('.pdf'):
+                # Extract year from filename
+                year_match = re.search(r'(\d{4})', filename)
+                if year_match:
+                    year = int(year_match.group(1))
+                    reports.append({
+                        'url': '',
+                        'year': year,
+                        'type': report_type,
+                        'title': filename,
+                        'filename': filename
+                    })
+        
+        return reports
+    
+    def _find_downloaded_pdfs_with_years(self, report_type: str) -> List[Tuple[str, int]]:
+        """Find downloaded PDFs and extract years"""
+        if report_type == 'annual':
+            pdf_dir = config.IR_ANNUAL_DIR
+        else:
+            pdf_dir = config.IR_QUARTERLY_DIR
+        
+        if not os.path.exists(pdf_dir):
+            return []
+        
+        files = []
+        for filename in os.listdir(pdf_dir):
+            if filename.lower().endswith('.pdf'):
+                filepath = os.path.join(pdf_dir, filename)
+                # Extract year from filename
+                year_match = re.search(r'(\d{4})', filename)
+                if year_match:
+                    year = int(year_match.group(1))
+                    files.append((filepath, year))
+        
+        return files
+    
+    def _standardize_ir_data(self, ir_data: Dict) -> Dict:
+        """
+        Standardize IR extracted data to match Yahoo Finance format
+        (dates as rows, line items as columns)
+        """
+        standardized = {}
+        
+        for statement_type, df in ir_data.items():
+            if df.empty:
+                standardized[statement_type] = df
+                continue
+            
+            # IR data should already have Date column
+            # Ensure it's in the right format
+            if 'Date' in df.columns:
+                # Convert to datetime if needed
+                df['Date'] = pd.to_datetime(df['Date'])
+                standardized[statement_type] = df
+            elif 'Year' in df.columns:
+                # Convert Year to Date
+                df['Date'] = pd.to_datetime(df['Year'].astype(str) + '-12-31')
+                df = df.drop('Year', axis=1)
+                standardized[statement_type] = df
+            else:
+                standardized[statement_type] = df
+        
+        return standardized
     
     def get_financial_statements(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """

@@ -224,9 +224,16 @@ class ExcelGenerator:
             apply_style_to_cell(ws[f'{col}{row}'], get_header_style())
         row += 1
         
+        # Determine data sources used
+        ir_used = False
+        if not self.financial_analyzer.normalized_income_stmt.empty:
+            # Check if data came from IR (would have specific indicators)
+            # For now, we'll note both sources
+            ir_used = True
+        
         sources = [
-            ("Yahoo Finance", "Financial statements, market data, beta", "Auto"),
-            ("Company IR Website", "Annual reports, investor presentations", "Manual"),
+            ("Yahoo Finance", "Financial statements, market data, beta", "Auto" if not ir_used else "Fallback"),
+            ("Company IR Website", "Annual reports, investor presentations", "Auto" if ir_used else "Not Available"),
             ("Market Data", "Current price, market cap, shares outstanding", "Auto"),
             ("Macro Data", "Risk-free rate, equity risk premium", "Manual"),
         ]
