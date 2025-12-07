@@ -5,9 +5,14 @@ Sensitivity analysis, scenario analysis, and relative valuation
 
 import pandas as pd
 import numpy as np
+import os
+import sys
 from typing import Dict, List, Optional
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from dcf_model import DCFModel
+from src.dcf_model import DCFModel
 
 
 class ValuationAnalyzer:

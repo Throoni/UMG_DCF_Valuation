@@ -176,28 +176,31 @@ After each run, the audit system provides:
 
 ```
 UMG_Challenge/
-├── main.py                 # Main execution script
+├── main.py                 # Main execution script (entry point)
 ├── config.py              # Configuration and assumptions
-├── data_collection.py     # Data fetching module
-├── financial_analysis.py  # Financial statement analysis
-├── dcf_model.py          # DCF core calculations
-├── valuation_analysis.py  # Sensitivity and scenario analysis
-├── excel_generator.py    # Excel output generation
-├── audit_system.py       # Validation and audit
-├── requirements.txt      # Python dependencies
-├── README.md             # This file
-├── .gitignore           # Git ignore rules
-├── utils/                # Utility functions
+├── requirements.txt       # Python dependencies
+├── README.md              # This file
+├── .gitignore            # Git ignore rules
+├── GITHUB_SETUP.md       # GitHub setup instructions
+├── src/                   # Source code modules
+│   ├── __init__.py
+│   ├── data_collection.py     # Data fetching module
+│   ├── financial_analysis.py  # Financial statement analysis
+│   ├── dcf_model.py          # DCF core calculations
+│   ├── valuation_analysis.py  # Sensitivity and scenario analysis
+│   ├── excel_generator.py    # Excel output generation
+│   └── audit_system.py       # Validation and audit
+├── utils/                 # Utility functions
 │   ├── __init__.py
 │   ├── data_validation.py
 │   └── formatting.py
-├── tests/                # Test suite
+├── tests/                 # Test suite
 │   ├── __init__.py
 │   └── test_integration.py
-├── data/                 # Data storage
-│   ├── raw/              # Raw collected data
-│   └── processed/        # Processed financials
-└── outputs/              # Generated Excel files
+├── data/                  # Data storage
+│   ├── raw/               # Raw collected data
+│   └── processed/         # Processed financials
+└── outputs/               # Generated Excel files
     └── UMG_DCF_Model.xlsx
 ```
 

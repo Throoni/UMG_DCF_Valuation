@@ -5,7 +5,12 @@ Implements proper DCF methodology following Damodaran's framework
 
 import pandas as pd
 import numpy as np
+import os
+import sys
 from typing import Dict, Tuple, Optional
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from utils.data_validation import (
     validate_growth_consistency, validate_wacc_range, 

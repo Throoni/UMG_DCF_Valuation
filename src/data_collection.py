@@ -10,9 +10,13 @@ import numpy as np
 import requests
 from bs4 import BeautifulSoup
 import os
+import sys
 import json
 from datetime import datetime
 from typing import Dict, Optional, Tuple
+
+# Add parent directory to path for config import
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 

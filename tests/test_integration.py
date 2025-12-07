@@ -12,11 +12,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
-from data_collection import DataCollector
-from financial_analysis import FinancialAnalyzer
-from dcf_model import DCFModel
-from valuation_analysis import ValuationAnalyzer
-from audit_system import AuditSystem
+from src.data_collection import DataCollector
+from src.financial_analysis import FinancialAnalyzer
+from src.dcf_model import DCFModel
+from src.valuation_analysis import ValuationAnalyzer
+from src.audit_system import AuditSystem
 
 
 def test_data_collection():

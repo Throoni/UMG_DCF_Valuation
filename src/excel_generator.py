@@ -12,6 +12,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, BarChart, Reference
 from typing import Dict, Optional
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from utils.formatting import (
     get_header_style, get_input_style, get_calculation_style,

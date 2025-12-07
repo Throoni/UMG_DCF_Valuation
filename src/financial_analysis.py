@@ -5,7 +5,12 @@ Calculates ratios, normalizes financials, and prepares data for DCF modeling
 
 import pandas as pd
 import numpy as np
+import os
+import sys
 from typing import Dict, Tuple, Optional
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from utils.data_validation import validate_financial_data, validate_accounting_identity
 
@@ -154,7 +159,7 @@ class FinancialAnalyzer:
             
             # Growth rates
             if len(revenue) > 1:
-                ratios['revenue_growth_yoy'] = revenue.pct_change().dropna().tolist()
+                ratios['revenue_growth_yoy'] = revenue.pct_change(fill_method=None).dropna().tolist()
                 ratios['revenue_cagr'] = self._calculate_cagr(revenue.iloc[0], revenue.iloc[-1], len(revenue))
             
             # Margins
@@ -169,7 +174,7 @@ class FinancialAnalyzer:
             
             if 'Net Income' in df.columns:
                 ratios['net_margin'] = (df['Net Income'] / revenue).tolist()
-                ratios['net_income_growth_yoy'] = df['Net Income'].pct_change().dropna().tolist()
+                ratios['net_income_growth_yoy'] = df['Net Income'].pct_change(fill_method=None).dropna().tolist()
         
         # Tax rate
         if 'Income Before Tax' in df.columns and 'Income Tax Expense' in df.columns:
@@ -208,11 +213,11 @@ class FinancialAnalyzer:
         
         if 'Operating Cash Flow' in df.columns:
             ocf = df['Operating Cash Flow']
-            ratios['operating_cash_flow_growth'] = ocf.pct_change().dropna().tolist()
+            ratios['operating_cash_flow_growth'] = ocf.pct_change(fill_method=None).dropna().tolist()
         
         if 'Free Cash Flow' in df.columns:
             fcf = df['Free Cash Flow']
-            ratios['free_cash_flow_growth'] = fcf.pct_change().dropna().tolist()
+            ratios['free_cash_flow_growth'] = fcf.pct_change(fill_method=None).dropna().tolist()
         
         return ratios
     

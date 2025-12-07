@@ -8,6 +8,10 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from openpyxl import load_workbook
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from utils.data_validation import (
     validate_accounting_identity,
@@ -175,7 +179,7 @@ class AuditSystem:
             
             # Check FCFF growth
             if len(dcf_model.fcff_projections) > 1:
-                fcff_growth = dcf_model.fcff_projections.pct_change().dropna()
+                fcff_growth = dcf_model.fcff_projections.pct_change(fill_method=None).dropna()
                 if any(g < -0.5 for g in fcff_growth if not np.isnan(g)):
                     warning = "Large negative FCFF growth detected"
                     self.audit_results['warnings'].append(warning)
@@ -193,7 +197,7 @@ class AuditSystem:
             
             # Check revenue growth reasonableness
             if len(dcf_model.revenue_projections) > 1:
-                revenue_growth = dcf_model.revenue_projections.pct_change().dropna()
+                revenue_growth = dcf_model.revenue_projections.pct_change(fill_method=None).dropna()
                 if any(g > 0.5 for g in revenue_growth if not np.isnan(g)):
                     warning = "Very high revenue growth (>50%) detected - verify assumptions"
                     self.audit_results['warnings'].append(warning)
@@ -203,7 +207,7 @@ class AuditSystem:
         if (dcf_model.revenue_projections is not None and 
             dcf_model.income_projections is not None):
             # This would require ROIC calculation - simplified check
-            revenue_growth = dcf_model.revenue_projections.pct_change().mean()
+            revenue_growth = dcf_model.revenue_projections.pct_change(fill_method=None).mean()
             if revenue_growth > 0.20:
                 warning = f"High average revenue growth ({revenue_growth:.1%}) - ensure sustainable"
                 self.audit_results['warnings'].append(warning)
